@@ -3,8 +3,26 @@
 use crate::errors::Error;
 use crate::storage;
 use crate::types::{Asset, DataKey};
-use crate::{Contract, ContractArgs, ContractClient, Initialized};
+use crate::{Contract, ContractArgs, ContractClient, Initialized, NodeAdded, NodeRemoved};
 use soroban_sdk::{contractimpl, Address, Env, Vec};
+
+/// Returns `Error::NotInitialized` unless the contract has been initialized.
+pub(crate) fn require_initialized(env: &Env) -> Result<(), Error> {
+    if env.storage().instance().has(&DataKey::Admin) {
+        Ok(())
+    } else {
+        Err(Error::NotInitialized)
+    }
+}
+
+/// Reads the stored node list. Defaults to an empty list if unset, which can
+/// only happen before `initialize`.
+pub(crate) fn read_nodes(env: &Env) -> Vec<Address> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Nodes)
+        .unwrap_or_else(|| Vec::new(env))
+}
 
 #[contractimpl]
 impl Contract {
@@ -65,6 +83,61 @@ impl Contract {
             resolution,
         }
         .publish(&env);
+        Ok(())
+    }
+
+    /// Adds a price node to the oracle.
+    ///
+    /// ### Arguments
+    /// - `admin`: the administrator. Its authorization is required.
+    /// - `node`: the address to add as an authorized price node.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success. Adding a node that is already present is a
+    ///   no-op and still returns `Ok(())`.
+    /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    ///
+    /// ### Events
+    /// Emits [`NodeAdded`] with the node address when a new node is added.
+    pub fn add_node(env: Env, admin: Address, node: Address) -> Result<(), Error> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        let mut nodes = read_nodes(&env);
+        if nodes.contains(&node) {
+            return Ok(());
+        }
+        nodes.push_back(node.clone());
+        env.storage().instance().set(&DataKey::Nodes, &nodes);
+        storage::extend_instance(&env);
+        NodeAdded { node }.publish(&env);
+        Ok(())
+    }
+
+    /// Removes a price node from the oracle.
+    ///
+    /// ### Arguments
+    /// - `admin`: the administrator. Its authorization is required.
+    /// - `node`: the address to remove from the authorized nodes.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success. Removing a node that is not present is a
+    ///   no-op and still returns `Ok(())`. Removal does not retroactively
+    ///   invalidate that node's already-finalized prices.
+    /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    ///
+    /// ### Events
+    /// Emits [`NodeRemoved`] with the node address when a node is removed.
+    pub fn remove_node(env: Env, admin: Address, node: Address) -> Result<(), Error> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        let mut nodes = read_nodes(&env);
+        let Some(index) = nodes.first_index_of(&node) else {
+            return Ok(());
+        };
+        nodes.remove(index);
+        env.storage().instance().set(&DataKey::Nodes, &nodes);
+        storage::extend_instance(&env);
+        NodeRemoved { node }.publish(&env);
         Ok(())
     }
 }

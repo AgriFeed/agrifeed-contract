@@ -29,5 +29,19 @@ pub struct Initialized {
     pub resolution: u32,
 }
 
+/// Emitted by [`Contract::add_node`] when a new price node is added.
+#[contractevent]
+pub struct NodeAdded {
+    #[topic]
+    pub node: Address,
+}
+
+/// Emitted by [`Contract::remove_node`] when a price node is removed.
+#[contractevent]
+pub struct NodeRemoved {
+    #[topic]
+    pub node: Address,
+}
+
 #[contract]
 pub struct Contract;
