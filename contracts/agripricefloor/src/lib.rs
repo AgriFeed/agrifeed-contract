@@ -212,9 +212,150 @@ impl Contract {
             .get(&DataKey::SettlementToken)
             .ok_or(Error::Unauthorized)?;
         let token_client = token::Client::new(&env, &settlement_token);
-        token_client.transfer(&buyer, &env.current_contract_address(), &amount);
-        env.storage().instance().set(&DataKey::Funded, &true);
-        extend_instance(&env);        Funded { buyer, amount }.publish(&env);
+        token_client.transfer(&buyer, &env.current_contract_address(), &amount);        env.storage().instance().set(&DataKey::Funded, &true);
+        extend_instance(&env);
+        Funded { buyer, amount }.publish(&env);
         Ok(())
+    }
+
+    /// Settles the agreement at maturity against the oracle's market price.
+    ///
+    /// Permissionless: anyone may trigger settlement once the maturity
+    /// timestamp has passed and the collateral is in the contract. The oracle
+    /// is queried with `lastprice`; if it has no price the contract never
+    /// fabricates a payout and returns
+    /// `Err(Error::OracleDataUnavailable)`, recording the failure so `cancel`
+    /// can enforce its grace window.
+    ///
+    /// When the market price is below the floor, the farmer receives
+    /// `min((floor_price - market_price) * notional, funded_amount)` where
+    /// `funded_amount` is the contract's settlement token balance, and the
+    /// buyer receives the remainder. When the market price is at or above the
+    /// floor, the buyer receives the full collateral back.
+    ///
+    /// ### Returns
+    /// - `Ok(i128)` with the payout sent to the farmer (zero when the market
+    ///   was at or above the floor).
+    /// - `Err(Error::AlreadySettled)` if the agreement already settled.
+    /// - `Err(Error::NotYetMature)` if called before the maturity timestamp.
+    /// - `Err(Error::NotFunded)` if the collateral was never deposited, which
+    ///   is also the case when no agreement exists.
+    /// - `Err(Error::OracleDataUnavailable)` if the oracle has no price for
+    ///   the commodity.
+    /// - `Err(Error::ArithmeticOverflow)` if the payout math overflows, which
+    ///   cannot occur for well-formed prices.
+    ///
+    /// ### Events
+    /// Emits [`Settled`] with the payout and the market price used.
+    pub fn settle(env: Env) -> Result<i128, Error> {
+        let now = env.ledger().timestamp();
+        let settled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Settled)
+            .unwrap_or(false);
+        if settled {
+            return Err(Error::AlreadySettled);
+        }
+        let maturity: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Maturity)
+            .ok_or(Error::NotYetMature)?;
+        if now < maturity {
+            return Err(Error::NotYetMature);
+        }
+        let funded: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Funded)
+            .unwrap_or(false);
+        if !funded {
+            return Err(Error::NotFunded);
+        }
+
+        let farmer: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Farmer)
+            .ok_or(Error::NotFunded)?;
+        let buyer: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Buyer)
+            .ok_or(Error::NotFunded)?;
+        let commodity: oracle::Asset = env
+            .storage()
+            .instance()
+            .get(&DataKey::Commodity)
+            .ok_or(Error::NotFunded)?;
+        let floor_price: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FloorPrice)
+            .ok_or(Error::NotFunded)?;
+        let notional: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Notional)
+            .ok_or(Error::NotFunded)?;
+        let settlement_token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementToken)
+            .ok_or(Error::NotFunded)?;
+        let oracle_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Oracle)
+            .ok_or(Error::NotFunded)?;
+        // The reads above are only None on a contract without a funded
+        // agreement; NotFunded is returned for that case rather than panic.
+
+        let token_client = token::Client::new(&env, &settlement_token);
+        let oracle_client = oracle::Client::new(&env, &oracle_addr);
+        let market_price = match oracle_client.lastprice(&commodity) {
+            Some(price_data) => price_data.price,
+            None => {
+                // Record the failure so cancel can enforce the grace window;
+                // never invent a settlement price.
+                env.storage().instance().set(&DataKey::SettleFailedAt, &now);
+                extend_instance(&env);
+                return Err(Error::OracleDataUnavailable);
+            }
+        };
+
+        let funded_amount = token_client.balance(&env.current_contract_address());
+        let (payout, refund) = if market_price < floor_price {
+            let diff = floor_price
+                .checked_sub(market_price)
+                .ok_or(Error::ArithmeticOverflow)?;
+            let gross = diff
+                .checked_mul(notional)
+                .ok_or(Error::ArithmeticOverflow)?;
+            let payout = core::cmp::min(gross, funded_amount);
+            let refund = funded_amount
+                .checked_sub(payout)
+                .ok_or(Error::ArithmeticOverflow)?;
+            (payout, refund)
+        } else {
+            (0, funded_amount)
+        };
+
+        if payout > 0 {
+            token_client.transfer(&env.current_contract_address(), &farmer, &payout);
+        }
+        if refund > 0 {
+            token_client.transfer(&env.current_contract_address(), &buyer, &refund);
+        }
+        env.storage().instance().set(&DataKey::Settled, &true);
+        extend_instance(&env);
+        Settled {
+            farmer,
+            payout,
+            market_price,
+        }
+        .publish(&env);
+        Ok(payout)
     }
 }
