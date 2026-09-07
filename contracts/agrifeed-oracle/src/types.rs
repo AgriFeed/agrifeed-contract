@@ -6,6 +6,7 @@ use soroban_sdk::{contracttype, Address, Symbol};
 /// `timestamp` is a Unix timestamp in seconds, rounded down to the contract's
 /// resolution window.
 #[contracttype]
+#[derive(Clone)]
 pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
@@ -58,6 +59,7 @@ pub enum DataKey {
 
 /// A single price submission from one node for one asset.
 #[contracttype]
+#[derive(Clone)]
 pub struct Submission {
     /// Address of the submitting node.
     pub node: Address,

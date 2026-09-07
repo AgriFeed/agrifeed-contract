@@ -8,6 +8,7 @@
 
 mod admin;
 mod errors;
+mod ingest;
 mod storage;
 mod types;
 
@@ -63,6 +64,16 @@ pub struct RetentionUpdated {
 pub struct CommodityAdded {
     #[topic]
     pub asset: Asset,
+}
+
+/// Emitted by [`Contract::submit_price`] when a node submits an observation.
+#[contractevent]
+pub struct PriceSubmitted {
+    #[topic]
+    pub asset: Asset,
+    #[topic]
+    pub node: Address,
+    pub price: i128,
 }
 
 #[contract]
