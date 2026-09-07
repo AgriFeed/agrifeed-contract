@@ -13,7 +13,7 @@ mod types;
 pub use errors::Error;
 pub use types::DataKey;
 
-use soroban_sdk::{contract, contractevent, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
 
 /// The deployed agrifeed-oracle interface.
 ///
@@ -154,6 +154,67 @@ impl Contract {
             maturity_ts,
         }
         .publish(&env);
+        Ok(())
+    }
+
+    /// Deposits the buyer's collateral into the contract.
+    ///
+    /// ### Arguments
+    /// - `buyer`: the address funding the agreement. Its authorization is
+    ///   required and it must be the buyer recorded at `initialize`.
+    /// - `amount`: the amount of `settlement_token` to transfer in. Must be
+    ///   positive.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success, after the tokens are in the contract.
+    /// - `Err(Error::Unauthorized)` if `buyer` is not the stored buyer, which
+    ///   is also the case when no agreement exists yet.
+    /// - `Err(Error::AlreadyFunded)` if the agreement is already funded.
+    /// - `Err(Error::AlreadySettled)` if the agreement already settled.
+    /// - `Err(Error::InvalidAmount)` if `amount` is not positive.
+    ///
+    /// ### Events
+    /// Emits [`Funded`] with the deposited amount.
+    pub fn fund(env: Env, buyer: Address, amount: i128) -> Result<(), Error> {
+        buyer.require_auth();
+        // The buyer identity check doubles as the initialization guard: when
+        // no agreement exists there is no stored buyer to match.
+        let stored_buyer: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Buyer)
+            .ok_or(Error::Unauthorized)?;
+        if stored_buyer != buyer {
+            return Err(Error::Unauthorized);
+        }
+        let funded: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Funded)
+            .unwrap_or(false);
+        if funded {
+            return Err(Error::AlreadyFunded);
+        }
+        let settled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Settled)
+            .unwrap_or(false);
+        if settled {
+            return Err(Error::AlreadySettled);
+        }
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        let settlement_token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementToken)
+            .ok_or(Error::Unauthorized)?;
+        let token_client = token::Client::new(&env, &settlement_token);
+        token_client.transfer(&buyer, &env.current_contract_address(), &amount);
+        env.storage().instance().set(&DataKey::Funded, &true);
+        extend_instance(&env);        Funded { buyer, amount }.publish(&env);
         Ok(())
     }
 }
