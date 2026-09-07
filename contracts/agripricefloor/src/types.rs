@@ -34,7 +34,4 @@ pub enum DataKey {
     Funded,
     /// Whether the agreement has been settled. Instance storage.
     Settled,
-    /// Ledger timestamp at which `settle` last failed because the oracle had
-    /// no price. Zero when no such failure occurred. Instance storage.
-    SettleFailedAt,
 }

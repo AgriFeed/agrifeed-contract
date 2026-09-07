@@ -8,6 +8,8 @@
 #![no_std]
 
 mod errors;
+#[cfg(test)]
+mod test;
 mod types;
 
 pub use errors::Error;
@@ -143,7 +145,6 @@ impl Contract {
         env.storage().instance().set(&DataKey::Oracle, &oracle.clone());
         env.storage().instance().set(&DataKey::Funded, &false);
         env.storage().instance().set(&DataKey::Settled, &false);
-        env.storage().instance().set(&DataKey::SettleFailedAt, &0u64);
         extend_instance(&env);
         Initialized {
             farmer,
@@ -187,6 +188,9 @@ impl Contract {
         if stored_buyer != buyer {
             return Err(Error::Unauthorized);
         }
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
         let funded: bool = env
             .storage()
             .instance()
@@ -202,9 +206,6 @@ impl Contract {
             .unwrap_or(false);
         if settled {
             return Err(Error::AlreadySettled);
-        }
-        if amount <= 0 {
-            return Err(Error::InvalidAmount);
         }
         let settlement_token: Address = env
             .storage()
@@ -224,8 +225,9 @@ impl Contract {
     /// timestamp has passed and the collateral is in the contract. The oracle
     /// is queried with `lastprice`; if it has no price the contract never
     /// fabricates a payout and returns
-    /// `Err(Error::OracleDataUnavailable)`, recording the failure so `cancel`
-    /// can enforce its grace window.
+    /// `Err(Error::OracleDataUnavailable)`. Soroban rolls back all state
+    /// changes of a failed invocation, so `cancel` infers the stalled state
+    /// from the oracle directly rather than from a recorded failure.
     ///
     /// When the market price is below the floor, the farmer receives
     /// `min((floor_price - market_price) * notional, funded_amount)` where
@@ -316,13 +318,11 @@ impl Contract {
         let oracle_client = oracle::Client::new(&env, &oracle_addr);
         let market_price = match oracle_client.lastprice(&commodity) {
             Some(price_data) => price_data.price,
-            None => {
-                // Record the failure so cancel can enforce the grace window;
-                // never invent a settlement price.
-                env.storage().instance().set(&DataKey::SettleFailedAt, &now);
-                extend_instance(&env);
-                return Err(Error::OracleDataUnavailable);
-            }
+            // Never invent a settlement price. Note that Soroban rolls back all
+            // state changes of a failed invocation, so a failure marker cannot
+            // be persisted here; cancel infers the stalled state from the
+            // oracle directly instead.
+            None => return Err(Error::OracleDataUnavailable),
         };
 
         let funded_amount = token_client.balance(&env.current_contract_address());
@@ -368,10 +368,15 @@ impl Contract {
     /// Cancellation is available only when the agreement has stalled:
     /// - while unfunded, once the maturity timestamp plus the unfunded grace
     ///   period ([`UNFUNDED_CANCEL_GRACE`]) has passed, or
-    /// - while funded, once a `settle` attempt failed with
-    ///   [`Error::OracleDataUnavailable`] and the further grace period
-    ///   ([`SETTLE_FAILURE_GRACE`]) has passed since that failure. In that
-    ///   case the full collateral balance is refunded to the buyer.
+    /// - while funded, once the maturity timestamp plus the further grace
+    ///   period ([`SETTLE_FAILURE_GRACE`]) has passed and the oracle still
+    ///   has no price for the commodity, meaning `settle` keeps failing with
+    ///   [`Error::OracleDataUnavailable`] and the collateral would be locked
+    ///   forever. Soroban rolls back a failed invocation, so a settle attempt
+    ///   cannot persist a failure marker; the oracle state is checked
+    ///   directly instead. If the oracle has a price, the agreement can be
+    ///   settled normally and cancel is refused. In the refund case the full
+    ///   collateral balance goes back to the buyer.
     ///
     /// An unfunded cancel changes no state, since nothing was deposited.
     ///
@@ -381,7 +386,8 @@ impl Contract {
     ///   also the case when no agreement exists.
     /// - `Err(Error::AlreadySettled)` if the agreement already settled.
     /// - `Err(Error::GracePeriodNotElapsed)` if the applicable grace period
-    ///   has not elapsed yet.
+    ///   has not elapsed yet, including when the oracle has a price and the
+    ///   agreement can still be settled.
     ///
     /// ### Events
     /// Emits [`Cancelled`] with the caller.
@@ -421,15 +427,30 @@ impl Contract {
             .ok_or(Error::Unauthorized)?;
         let token_client = token::Client::new(&env, &settlement_token);
         if funded {
-            let failed_at: u64 = env
+            let maturity: u64 = env
                 .storage()
                 .instance()
-                .get(&DataKey::SettleFailedAt)
-                .unwrap_or(0);
-            // A funded agreement can only be cancelled after a settle attempt
-            // failed for lack of an oracle price, and only once the further
-            // grace window after that failure has elapsed.
-            if failed_at == 0 || now < failed_at.saturating_add(SETTLE_FAILURE_GRACE) {
+                .get(&DataKey::Maturity)
+                .ok_or(Error::GracePeriodNotElapsed)?;
+            // A funded agreement can only be cancelled once the further grace
+            // window past maturity has elapsed and the oracle still has no
+            // price, so settlement keeps failing. When the oracle has a price
+            // the agreement should be settled instead of cancelled.
+            if now < maturity.saturating_add(SETTLE_FAILURE_GRACE) {
+                return Err(Error::GracePeriodNotElapsed);
+            }
+            let oracle_addr: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Oracle)
+                .ok_or(Error::GracePeriodNotElapsed)?;
+            let commodity: oracle::Asset = env
+                .storage()
+                .instance()
+                .get(&DataKey::Commodity)
+                .ok_or(Error::GracePeriodNotElapsed)?;
+            let oracle_client = oracle::Client::new(&env, &oracle_addr);
+            if oracle_client.lastprice(&commodity).is_some() {
                 return Err(Error::GracePeriodNotElapsed);
             }
             let balance = token_client.balance(&env.current_contract_address());
