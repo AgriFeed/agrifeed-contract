@@ -4,8 +4,8 @@ use crate::errors::Error;
 use crate::storage;
 use crate::types::{Asset, DataKey};
 use crate::{
-    Contract, ContractArgs, ContractClient, Initialized, NodeAdded, NodeRemoved, RetentionUpdated,
-    ThresholdUpdated,
+    CommodityAdded, Contract, ContractArgs, ContractClient, Initialized, NodeAdded, NodeRemoved,
+    RetentionUpdated, ThresholdUpdated,
 };
 use soroban_sdk::{contractimpl, Address, Env, Vec};
 
@@ -24,6 +24,15 @@ pub(crate) fn read_nodes(env: &Env) -> Vec<Address> {
     env.storage()
         .instance()
         .get(&DataKey::Nodes)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Reads the stored commodity list. Defaults to an empty list if unset, which
+/// can only happen before `initialize`.
+pub(crate) fn read_commodities(env: &Env) -> Vec<Asset> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Commodities)
         .unwrap_or_else(|| Vec::new(env))
 }
 
@@ -198,6 +207,37 @@ impl Contract {
         env.storage().instance().set(&DataKey::Retention, &retention);
         storage::extend_instance(&env);
         RetentionUpdated { retention }.publish(&env);
+        Ok(())
+    }
+
+    /// Adds a commodity to the set of tracked assets.
+    ///
+    /// ### Arguments
+    /// - `admin`: the administrator. Its authorization is required.
+    /// - `asset`: the asset to track, typically `Asset::Other(Symbol)` for a
+    ///   commodity such as `"COCOA"`.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success.
+    /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::CommodityAlreadyExists)` if the asset is already
+    ///   tracked.
+    ///
+    /// ### Events
+    /// Emits [`CommodityAdded`] with the asset.
+    pub fn add_commodity(env: Env, admin: Address, asset: Asset) -> Result<(), Error> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        let mut commodities = read_commodities(&env);
+        if commodities.contains(&asset) {
+            return Err(Error::CommodityAlreadyExists);
+        }
+        commodities.push_back(asset.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::Commodities, &commodities);
+        storage::extend_instance(&env);
+        CommodityAdded { asset }.publish(&env);
         Ok(())
     }
 }

@@ -58,5 +58,12 @@ pub struct RetentionUpdated {
     pub retention: u32,
 }
 
+/// Emitted by [`Contract::add_commodity`] when a new commodity is tracked.
+#[contractevent]
+pub struct CommodityAdded {
+    #[topic]
+    pub asset: Asset,
+}
+
 #[contract]
 pub struct Contract;

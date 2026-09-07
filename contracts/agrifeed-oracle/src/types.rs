@@ -17,6 +17,7 @@ pub struct PriceData {
 /// Agricultural commodities are represented as `Asset::Other(Symbol)`, for
 /// example `Asset::Other(Symbol::new(&env, "COCOA"))`.
 #[contracttype]
+#[derive(Clone)]
 pub enum Asset {
     Stellar(Address),
     Other(Symbol),
