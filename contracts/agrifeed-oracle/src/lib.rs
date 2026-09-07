@@ -76,5 +76,14 @@ pub struct PriceSubmitted {
     pub price: i128,
 }
 
+/// Emitted by [`Contract::finalize_price`] with the finalized median price.
+#[contractevent]
+pub struct PriceFinalized {
+    #[topic]
+    pub asset: Asset,
+    pub price: i128,
+    pub timestamp: u64,
+}
+
 #[contract]
 pub struct Contract;
