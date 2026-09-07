@@ -11,6 +11,8 @@ mod errors;
 mod ingest;
 mod interface;
 mod storage;
+#[cfg(test)]
+mod test;
 mod types;
 
 pub use errors::Error;

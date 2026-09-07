@@ -6,7 +6,7 @@ use soroban_sdk::{contracttype, Address, Symbol};
 /// `timestamp` is a Unix timestamp in seconds, rounded down to the contract's
 /// resolution window.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
@@ -18,7 +18,7 @@ pub struct PriceData {
 /// Agricultural commodities are represented as `Asset::Other(Symbol)`, for
 /// example `Asset::Other(Symbol::new(&env, "COCOA"))`.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Asset {
     Stellar(Address),
     Other(Symbol),
@@ -59,7 +59,7 @@ pub enum DataKey {
 
 /// A single price submission from one node for one asset.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Submission {
     /// Address of the submitting node.
     pub node: Address,
