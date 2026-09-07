@@ -1,6 +1,23 @@
 //! Storage keys for the agripricefloor contract.
 
-use soroban_sdk::contracttype;
+use soroban_sdk::{contracttype, Address, Symbol};
+
+/// The asset a price refers to, per SEP-40: a Stellar asset (identified by
+/// its asset contract address) or any other asset (identified by a symbol).
+///
+/// This mirrors `agrifeed_oracle::Asset` variant-for-variant, so the two
+/// types share the same XDR encoding. It is declared locally, rather than
+/// reused from the oracle's `contractimport!`-generated client module,
+/// because a type only pulled in through an import is not written into
+/// this contract's own on-chain spec: any caller that builds calls from
+/// this contract's spec (the CLI's implicit help, or generated client
+/// bindings) would otherwise have no way to learn its shape.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Asset {
+    Stellar(Address),
+    Other(Symbol),
+}
 
 /// Storage keys for the price-floor agreement.
 ///

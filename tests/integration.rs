@@ -17,13 +17,15 @@ mod oracle {
 }
 
 mod pricefloor {
-    // The pricefloor spec reuses the oracle's Asset type without exporting it.
-    pub use crate::oracle::Asset;
     soroban_sdk::contractimport!(file = "target/wasm32v1-none/release/agripricefloor.wasm");
 }
 
 fn cocoa(env: &Env) -> oracle::Asset {
     oracle::Asset::Other(Symbol::new(env, "COCOA"))
+}
+
+fn cocoa_pf(env: &Env) -> pricefloor::Asset {
+    pricefloor::Asset::Other(Symbol::new(env, "COCOA"))
 }
 
 #[test]
@@ -91,7 +93,7 @@ fn full_flow_oracle_to_settlement() {
     pf.initialize(
         &farmer,
         &buyer,
-        &cocoa(&env),
+        &cocoa_pf(&env),
         &120,
         &10,
         &token_id,

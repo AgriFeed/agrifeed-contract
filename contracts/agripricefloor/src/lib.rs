@@ -16,7 +16,7 @@ mod test;
 mod types;
 
 pub use errors::Error;
-pub use types::DataKey;
+pub use types::{Asset, DataKey};
 
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
 
@@ -45,7 +45,7 @@ pub struct Initialized {
     pub farmer: Address,
     #[topic]
     pub buyer: Address,
-    pub commodity: oracle::Asset,
+    pub commodity: Asset,
     pub floor_price: i128,
     pub notional: i128,
     pub maturity_ts: u64,
@@ -86,6 +86,18 @@ fn extend_instance(env: &Env) {
     env.storage().instance().extend_ttl(max / 2, max);
 }
 
+/// Converts the locally-declared [`Asset`] into the oracle crate's
+/// `contractimport!`-generated equivalent, so it can be passed to the
+/// oracle client. The two types share the same variant shape and XDR
+/// encoding by construction; see [`Asset`] for why they are declared
+/// separately.
+fn to_oracle_asset(asset: &Asset) -> oracle::Asset {
+    match asset.clone() {
+        Asset::Stellar(addr) => oracle::Asset::Stellar(addr),
+        Asset::Other(sym) => oracle::Asset::Other(sym),
+    }
+}
+
 #[contractimpl]
 impl Contract {
     /// Creates a price-floor agreement between a farmer and a buyer.
@@ -120,7 +132,7 @@ impl Contract {
         env: Env,
         farmer: Address,
         buyer: Address,
-        commodity: oracle::Asset,
+        commodity: Asset,
         floor_price: i128,
         notional: i128,
         settlement_token: Address,
@@ -300,7 +312,7 @@ impl Contract {
             .instance()
             .get(&DataKey::Buyer)
             .ok_or(Error::NotFunded)?;
-        let commodity: oracle::Asset = env
+        let commodity: Asset = env
             .storage()
             .instance()
             .get(&DataKey::Commodity)
@@ -330,7 +342,7 @@ impl Contract {
 
         let token_client = token::Client::new(&env, &settlement_token);
         let oracle_client = oracle::Client::new(&env, &oracle_addr);
-        let market_price = match oracle_client.lastprice(&commodity) {
+        let market_price = match oracle_client.lastprice(&to_oracle_asset(&commodity)) {
             Some(price_data) => price_data.price,
             // Never invent a settlement price. Note that Soroban rolls back all
             // state changes of a failed invocation, so a failure marker cannot
@@ -458,13 +470,13 @@ impl Contract {
                 .instance()
                 .get(&DataKey::Oracle)
                 .ok_or(Error::GracePeriodNotElapsed)?;
-            let commodity: oracle::Asset = env
+            let commodity: Asset = env
                 .storage()
                 .instance()
                 .get(&DataKey::Commodity)
                 .ok_or(Error::GracePeriodNotElapsed)?;
             let oracle_client = oracle::Client::new(&env, &oracle_addr);
-            if oracle_client.lastprice(&commodity).is_some() {
+            if oracle_client.lastprice(&to_oracle_asset(&commodity)).is_some() {
                 return Err(Error::GracePeriodNotElapsed);
             }
             let balance = token_client.balance(&env.current_contract_address());

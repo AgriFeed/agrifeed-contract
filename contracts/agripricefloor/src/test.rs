@@ -4,7 +4,7 @@
 extern crate std;
 
 use crate::oracle;
-use crate::{Contract, ContractClient, Error};
+use crate::{to_oracle_asset, Asset, Contract, ContractClient, Error};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{token, vec, Address, Env, Symbol, Vec};
 
@@ -18,14 +18,14 @@ struct Fixture {
     buyer: Address,
     stranger: Address,
     token_id: Address,
-    cocoa: oracle::Asset,
+    cocoa: Asset,
     floor_price: i128,
     notional: i128,
     maturity_ts: u64,
 }
 
-fn cocoa(env: &Env) -> oracle::Asset {
-    oracle::Asset::Other(Symbol::new(env, "COCOA"))
+fn cocoa(env: &Env) -> Asset {
+    Asset::Other(Symbol::new(env, "COCOA"))
 }
 
 /// Builds an initialized agreement. The buyer is minted 1,000,000 tokens but
@@ -65,7 +65,7 @@ fn setup(floor_price: i128, notional: i128) -> Fixture {
         oracle_client.add_node(&admin, &node);
     }
     oracle_client.set_threshold(&admin, &3);
-    oracle_client.add_commodity(&admin, &commodity);
+    oracle_client.add_commodity(&admin, &to_oracle_asset(&commodity));
 
     let pricefloor_id = env.register(Contract, ());
     let pf = ContractClient::new(&env, &pricefloor_id);
@@ -106,9 +106,9 @@ fn fund(f: &Fixture, amount: i128) {
 fn push_oracle_price(f: &Fixture, price: i128) {
     let oracle_client = oracle::Client::new(&f.env, &f.oracle_id);
     for node in f.nodes.iter() {
-        oracle_client.submit_price(&node, &f.cocoa, &price, &f.env.ledger().timestamp());
+        oracle_client.submit_price(&node, &to_oracle_asset(&f.cocoa), &price, &f.env.ledger().timestamp());
     }
-    oracle_client.finalize_price(&f.cocoa);
+    oracle_client.finalize_price(&to_oracle_asset(&f.cocoa));
 }
 
 fn balance(f: &Fixture, address: &Address) -> i128 {
