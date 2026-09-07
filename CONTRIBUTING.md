@@ -53,6 +53,23 @@ compile, because the tests also read the wasm files.
 - Verify locally before pushing: `cargo fmt --all`, `cargo clippy --workspace
   --all-targets -- -D warnings`, the wasm builds above, and `cargo test --workspace`.
 
+## Known build quirks
+
+- `cargo clean -p <package>` does not reliably clear `wasm32v1-none` build output in
+  this cargo version, neither the bare form nor `cargo clean -p <package> --target
+  wasm32v1-none` removes the existing `.wasm`/`.d`/`deps/*` files under
+  `target/wasm32v1-none/release/`. To force a genuine rebuild, delete those files
+  directly before running `stellar contract build`.
+- Bare `stellar contract build` (no `--package`) fails at the workspace root with
+  `crate types to rustc can only be passed to one target`, because the root
+  `agrifeed-contract` package has no `src/`, only `tests/`. Always build each contract
+  explicitly: `stellar contract build --package agripricefloor` or `--package
+  agrifeed-oracle`.
+- If `stellar contract bindings typescript` throws a `Missing Entry` error on a
+  contract that `stellar contract info` inspects cleanly, retry after a short pause
+  before assuming the contract itself is broken. This may be an RPC-side indexing lag
+  right after a fresh deploy, not confirmed, but worth trying first.
+
 ## Tests
 
 - Unit tests live in `src/test.rs` inside each contract crate.
