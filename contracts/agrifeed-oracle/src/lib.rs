@@ -6,10 +6,28 @@
 //! pending submissions into a single median price per resolution window.
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl};
+mod admin;
+mod errors;
+mod storage;
+mod types;
+
+pub use errors::Error;
+pub use types::{Asset, DataKey, PriceData, Submission};
+
+use soroban_sdk::{contract, contractevent, Address};
+
+/// Default maximum number of finalized price records kept per commodity.
+pub const DEFAULT_RETENTION: u32 = 90;
+
+/// Emitted by [`Contract::initialize`] with the initial configuration.
+#[contractevent]
+pub struct Initialized {
+    #[topic]
+    pub admin: Address,
+    pub base_asset: Asset,
+    pub decimals: u32,
+    pub resolution: u32,
+}
 
 #[contract]
 pub struct Contract;
-
-#[contractimpl]
-impl Contract {}
