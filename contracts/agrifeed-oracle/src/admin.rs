@@ -3,7 +3,10 @@
 use crate::errors::Error;
 use crate::storage;
 use crate::types::{Asset, DataKey};
-use crate::{Contract, ContractArgs, ContractClient, Initialized, NodeAdded, NodeRemoved};
+use crate::{
+    Contract, ContractArgs, ContractClient, Initialized, NodeAdded, NodeRemoved, RetentionUpdated,
+    ThresholdUpdated,
+};
 use soroban_sdk::{contractimpl, Address, Env, Vec};
 
 /// Returns `Error::NotInitialized` unless the contract has been initialized.
@@ -138,6 +141,63 @@ impl Contract {
         env.storage().instance().set(&DataKey::Nodes, &nodes);
         storage::extend_instance(&env);
         NodeRemoved { node }.publish(&env);
+        Ok(())
+    }
+
+    /// Sets the minimum number of submissions required to finalize a price.
+    ///
+    /// ### Arguments
+    /// - `admin`: the administrator. Its authorization is required.
+    /// - `threshold`: the new threshold. Must be at least 1 and at most the
+    ///   current number of nodes.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success.
+    /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::InvalidThreshold)` if `threshold` is zero or exceeds the
+    ///   number of nodes.
+    ///
+    /// ### Events
+    /// Emits [`ThresholdUpdated`] with the new threshold.
+    pub fn set_threshold(env: Env, admin: Address, threshold: u32) -> Result<(), Error> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        let nodes = read_nodes(&env);
+        if threshold == 0 || threshold > nodes.len() {
+            return Err(Error::InvalidThreshold);
+        }
+        env.storage().instance().set(&DataKey::Threshold, &threshold);
+        storage::extend_instance(&env);
+        ThresholdUpdated { threshold }.publish(&env);
+        Ok(())
+    }
+
+    /// Sets the maximum number of finalized price records kept per commodity.
+    ///
+    /// Older records beyond this limit are pruned on each finalize.
+    ///
+    /// ### Arguments
+    /// - `admin`: the administrator. Its authorization is required.
+    /// - `retention`: the new retention limit. Must be at least 1.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success.
+    /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::InvalidThreshold)` if `retention` is zero. The error is
+    ///   reused as a general validation error for positive configuration
+    ///   values.
+    ///
+    /// ### Events
+    /// Emits [`RetentionUpdated`] with the new limit.
+    pub fn set_retention(env: Env, admin: Address, retention: u32) -> Result<(), Error> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        if retention == 0 {
+            return Err(Error::InvalidThreshold);
+        }
+        env.storage().instance().set(&DataKey::Retention, &retention);
+        storage::extend_instance(&env);
+        RetentionUpdated { retention }.publish(&env);
         Ok(())
     }
 }

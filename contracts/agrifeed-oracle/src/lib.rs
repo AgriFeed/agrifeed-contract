@@ -43,5 +43,20 @@ pub struct NodeRemoved {
     pub node: Address,
 }
 
+/// Emitted by [`Contract::set_threshold`] when the finalize threshold changes.
+#[contractevent]
+pub struct ThresholdUpdated {
+    #[topic]
+    pub threshold: u32,
+}
+
+/// Emitted by [`Contract::set_retention`] when the history retention limit
+/// changes.
+#[contractevent]
+pub struct RetentionUpdated {
+    #[topic]
+    pub retention: u32,
+}
+
 #[contract]
 pub struct Contract;
