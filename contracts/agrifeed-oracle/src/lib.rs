@@ -9,10 +9,12 @@
 mod admin;
 mod errors;
 mod ingest;
+mod interface;
 mod storage;
 mod types;
 
 pub use errors::Error;
+pub use interface::PriceFeedTrait;
 pub use types::{Asset, DataKey, PriceData, Submission};
 
 use soroban_sdk::{contract, contractevent, Address};
