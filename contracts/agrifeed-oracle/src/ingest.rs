@@ -157,12 +157,7 @@ impl Contract {
             .persistent()
             .set(&DataKey::Pending(asset.clone()), &pending);
         storage::extend_persistent(&env, &DataKey::Pending(asset.clone()));
-        PriceSubmitted {
-            asset,
-            node,
-            price,
-        }
-        .publish(&env);
+        PriceSubmitted { asset, node, price }.publish(&env);
         Ok(())
     }
 

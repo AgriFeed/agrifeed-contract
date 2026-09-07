@@ -49,10 +49,18 @@ impl Contract {
     pub fn extend_instance_ttl(env: Env, asset: Asset) -> Result<(), Error> {
         require_initialized(&env)?;
         extend_instance(&env);
-        if env.storage().persistent().has(&DataKey::Pending(asset.clone())) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Pending(asset.clone()))
+        {
             extend_persistent(&env, &DataKey::Pending(asset.clone()));
         }
-        if env.storage().persistent().has(&DataKey::History(asset.clone())) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::History(asset.clone()))
+        {
             extend_persistent(&env, &DataKey::History(asset));
         }
         Ok(())

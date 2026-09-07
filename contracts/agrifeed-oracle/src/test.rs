@@ -181,14 +181,22 @@ fn test_admin_functions_require_initialization() {
         &env,
         &contract_id,
         "add_node",
-        vec![&env, admin.clone().into_val(&env), node.clone().into_val(&env)],
+        vec![
+            &env,
+            admin.clone().into_val(&env),
+            node.clone().into_val(&env),
+        ],
         Error::NotInitialized,
     );
     assert_error(
         &env,
         &contract_id,
         "remove_node",
-        vec![&env, admin.clone().into_val(&env), node.clone().into_val(&env)],
+        vec![
+            &env,
+            admin.clone().into_val(&env),
+            node.clone().into_val(&env),
+        ],
         Error::NotInitialized,
     );
     assert_error(
@@ -255,14 +263,22 @@ fn test_set_threshold_validates() {
         &f.env,
         &f.contract_id,
         "set_threshold",
-        vec![&f.env, f.admin.clone().into_val(&f.env), 4u32.into_val(&f.env)],
+        vec![
+            &f.env,
+            f.admin.clone().into_val(&f.env),
+            4u32.into_val(&f.env),
+        ],
         Error::InvalidThreshold,
     );
     assert_error(
         &f.env,
         &f.contract_id,
         "set_threshold",
-        vec![&f.env, f.admin.clone().into_val(&f.env), 0u32.into_val(&f.env)],
+        vec![
+            &f.env,
+            f.admin.clone().into_val(&f.env),
+            0u32.into_val(&f.env),
+        ],
         Error::InvalidThreshold,
     );
     client.mock_all_auths().set_threshold(&f.admin, &2);
@@ -276,7 +292,11 @@ fn test_set_retention_validates() {
         &f.env,
         &f.contract_id,
         "set_retention",
-        vec![&f.env, f.admin.clone().into_val(&f.env), 0u32.into_val(&f.env)],
+        vec![
+            &f.env,
+            f.admin.clone().into_val(&f.env),
+            0u32.into_val(&f.env),
+        ],
         Error::InvalidThreshold,
     );
     client.mock_all_auths().set_retention(&f.admin, &5);
@@ -428,28 +448,34 @@ fn test_finalize_price_below_threshold() {
     client
         .mock_all_auths()
         .submit_price(&f.nodes.get_unchecked(1), &f.cocoa, &200, &200);
-    let res = f.env.try_invoke_contract::<Result<PriceData, Error>, Error>(
-        &f.contract_id,
-        &Symbol::new(&f.env, "finalize_price"),
-        vec![&f.env, f.cocoa.clone().into_val(&f.env)],
-    );
+    let res = f
+        .env
+        .try_invoke_contract::<Result<PriceData, Error>, Error>(
+            &f.contract_id,
+            &Symbol::new(&f.env, "finalize_price"),
+            vec![&f.env, f.cocoa.clone().into_val(&f.env)],
+        );
     assert_eq!(res, Err(Ok(Error::ThresholdNotMet)));
 }
 
 #[test]
 fn test_finalize_price_no_pending() {
     let f = setup();
-    let res = f.env.try_invoke_contract::<Result<PriceData, Error>, Error>(
-        &f.contract_id,
-        &Symbol::new(&f.env, "finalize_price"),
-        vec![&f.env, f.cocoa.clone().into_val(&f.env)],
-    );
+    let res = f
+        .env
+        .try_invoke_contract::<Result<PriceData, Error>, Error>(
+            &f.contract_id,
+            &Symbol::new(&f.env, "finalize_price"),
+            vec![&f.env, f.cocoa.clone().into_val(&f.env)],
+        );
     assert_eq!(res, Err(Ok(Error::NoPendingSubmissions)));
-    let res = f.env.try_invoke_contract::<Result<PriceData, Error>, Error>(
-        &f.contract_id,
-        &Symbol::new(&f.env, "finalize_price"),
-        vec![&f.env, asset(&f.env, "COFFEE").into_val(&f.env)],
-    );
+    let res = f
+        .env
+        .try_invoke_contract::<Result<PriceData, Error>, Error>(
+            &f.contract_id,
+            &Symbol::new(&f.env, "finalize_price"),
+            vec![&f.env, asset(&f.env, "COFFEE").into_val(&f.env)],
+        );
     assert_eq!(res, Err(Ok(Error::NoPendingSubmissions)));
 }
 
@@ -538,9 +564,12 @@ fn test_finalize_price_prunes_history() {
     client.mock_all_auths().set_retention(&f.admin, &2);
     for ts in [1_000u64, 1_100, 1_200] {
         f.env.ledger().set_timestamp(ts);
-        client
-            .mock_all_auths()
-            .submit_price(&f.nodes.get_unchecked(0), &f.cocoa, &(ts as i128), &ts);
+        client.mock_all_auths().submit_price(
+            &f.nodes.get_unchecked(0),
+            &f.cocoa,
+            &(ts as i128),
+            &ts,
+        );
         client.mock_all_auths().finalize_price(&f.cocoa);
     }
     let prices = client.prices(&f.cocoa, &10).unwrap();

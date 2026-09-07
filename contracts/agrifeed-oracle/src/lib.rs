@@ -5,6 +5,9 @@
 //! prices per commodity, and a permissionless finalize step aggregates the
 //! pending submissions into a single median price per resolution window.
 #![no_std]
+// Public function signatures are fixed by the application spec (for example
+// initialize takes eight arguments), so the lint is allowed at crate level.
+#![allow(clippy::too_many_arguments)]
 
 mod admin;
 mod errors;

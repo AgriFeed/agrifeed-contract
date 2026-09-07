@@ -47,7 +47,9 @@ fn setup(floor_price: i128, notional: i128) -> Fixture {
     let maturity_ts = base_ts + 3_600;
     env.ledger().set_timestamp(base_ts);
 
-    let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &1_000_000);
 
     let commodity = cocoa(&env);
@@ -260,7 +262,9 @@ fn test_settle_without_oracle_price() {
     assert_eq!(res, Err(Ok(Error::OracleDataUnavailable)));
     // The funded agreement can be cancelled once the further grace window
     // past maturity has elapsed, refunding the collateral to the buyer.
-    f.env.ledger().set_timestamp(f.maturity_ts + crate::SETTLE_FAILURE_GRACE + 1);
+    f.env
+        .ledger()
+        .set_timestamp(f.maturity_ts + crate::SETTLE_FAILURE_GRACE + 1);
     let res = pf.try_cancel(&f.buyer);
     assert_eq!(res, Ok(Ok(())));
     assert_eq!(balance(&f, &f.buyer), 1_000_000);
@@ -320,7 +324,9 @@ fn test_cancel_funded_requires_grace_elapsed() {
     let pf = ContractClient::new(&f.env, &f.pricefloor_id);
     // Maturity plus the grace window has not elapsed yet and the oracle is
     // silent, so cancel is premature.
-    f.env.ledger().set_timestamp(f.maturity_ts + crate::SETTLE_FAILURE_GRACE - 1);
+    f.env
+        .ledger()
+        .set_timestamp(f.maturity_ts + crate::SETTLE_FAILURE_GRACE - 1);
     let res = pf.try_cancel(&f.buyer);
     assert_eq!(res, Err(Ok(Error::GracePeriodNotElapsed)));
     // Once the grace window has elapsed with the oracle still silent, the

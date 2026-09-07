@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - name: Install stellar-cli
+        run: curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | bash
+      - name: Build oracle wasm
+        # The pricefloor crate and the integration tests compile against the
+        # oracle wasm via contractimport, so the oracle must build first.
+        run: stellar contract build --package agrifeed-oracle
+      - name: Build pricefloor wasm
+        run: stellar contract build --package agripricefloor
+      - name: Run tests
+        run: cargo test --workspace

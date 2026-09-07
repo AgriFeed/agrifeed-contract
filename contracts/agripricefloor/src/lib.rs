@@ -6,6 +6,9 @@
 //! buyer pays the farmer the difference; otherwise the buyer's collateral is
 //! refunded. No physical delivery and no custody of goods.
 #![no_std]
+// Public function signatures are fixed by the application spec (for example
+// initialize takes nine arguments), so the lint is allowed at crate level.
+#![allow(clippy::too_many_arguments)]
 
 mod errors;
 #[cfg(test)]
@@ -23,9 +26,7 @@ use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
 /// agrifeed-oracle`) before this crate compiles, since the client and the
 /// shared `Asset` type are generated from its spec.
 pub mod oracle {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/agrifeed_oracle.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/agrifeed_oracle.wasm");
 }
 
 /// Grace period, in seconds, after maturity during which an unfunded
@@ -133,16 +134,28 @@ impl Contract {
         if env.storage().instance().has(&DataKey::Farmer) {
             return Err(Error::AlreadyInitialized);
         }
-        env.storage().instance().set(&DataKey::Farmer, &farmer.clone());
-        env.storage().instance().set(&DataKey::Buyer, &buyer.clone());
-        env.storage().instance().set(&DataKey::Commodity, &commodity.clone());
-        env.storage().instance().set(&DataKey::FloorPrice, &floor_price);
+        env.storage()
+            .instance()
+            .set(&DataKey::Farmer, &farmer.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::Buyer, &buyer.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::Commodity, &commodity.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::FloorPrice, &floor_price);
         env.storage().instance().set(&DataKey::Notional, &notional);
         env.storage()
             .instance()
             .set(&DataKey::SettlementToken, &settlement_token.clone());
-        env.storage().instance().set(&DataKey::Maturity, &maturity_ts);
-        env.storage().instance().set(&DataKey::Oracle, &oracle.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::Maturity, &maturity_ts);
+        env.storage()
+            .instance()
+            .set(&DataKey::Oracle, &oracle.clone());
         env.storage().instance().set(&DataKey::Funded, &false);
         env.storage().instance().set(&DataKey::Settled, &false);
         extend_instance(&env);
@@ -213,7 +226,8 @@ impl Contract {
             .get(&DataKey::SettlementToken)
             .ok_or(Error::Unauthorized)?;
         let token_client = token::Client::new(&env, &settlement_token);
-        token_client.transfer(&buyer, &env.current_contract_address(), &amount);        env.storage().instance().set(&DataKey::Funded, &true);
+        token_client.transfer(&buyer, env.current_contract_address(), &amount);
+        env.storage().instance().set(&DataKey::Funded, &true);
         extend_instance(&env);
         Funded { buyer, amount }.publish(&env);
         Ok(())

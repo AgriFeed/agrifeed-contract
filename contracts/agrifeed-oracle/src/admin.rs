@@ -79,8 +79,12 @@ impl Contract {
             .set(&DataKey::Nodes, &Vec::<Address>::new(&env));
         env.storage().instance().set(&DataKey::Threshold, &0u32);
         env.storage().instance().set(&DataKey::Decimals, &decimals);
-        env.storage().instance().set(&DataKey::Resolution, &resolution);
-        env.storage().instance().set(&DataKey::BaseAsset, &base_asset);
+        env.storage()
+            .instance()
+            .set(&DataKey::Resolution, &resolution);
+        env.storage()
+            .instance()
+            .set(&DataKey::BaseAsset, &base_asset);
         env.storage()
             .instance()
             .set(&DataKey::Commodities, &Vec::<Asset>::new(&env));
@@ -175,7 +179,9 @@ impl Contract {
         if threshold == 0 || threshold > nodes.len() {
             return Err(Error::InvalidThreshold);
         }
-        env.storage().instance().set(&DataKey::Threshold, &threshold);
+        env.storage()
+            .instance()
+            .set(&DataKey::Threshold, &threshold);
         storage::extend_instance(&env);
         ThresholdUpdated { threshold }.publish(&env);
         Ok(())
@@ -204,7 +210,9 @@ impl Contract {
         if retention == 0 {
             return Err(Error::InvalidThreshold);
         }
-        env.storage().instance().set(&DataKey::Retention, &retention);
+        env.storage()
+            .instance()
+            .set(&DataKey::Retention, &retention);
         storage::extend_instance(&env);
         RetentionUpdated { retention }.publish(&env);
         Ok(())

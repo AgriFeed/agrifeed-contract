@@ -79,12 +79,7 @@ impl PriceFeedTrait for Contract {
     fn price(env: Env, asset: Asset, timestamp: u64) -> Option<PriceData> {
         let history = read_history(&env, &asset);
         let target = round_to_window(&env, timestamp);
-        for record in history.iter() {
-            if record.timestamp == target {
-                return Some(record);
-            }
-        }
-        None
+        history.iter().find(|record| record.timestamp == target)
     }
 
     /// Returns up to `records` most recent price points for `asset`, ordered

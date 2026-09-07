@@ -1,4 +1,7 @@
 //! End-to-end integration test across the agrifeed contracts.
+//! Contract interface signatures are fixed by the application spec, so the
+//! generated clients trip clippy::too_many_arguments.
+#![allow(clippy::too_many_arguments)]
 //!
 //! Deploys the oracle from its wasm, ingests three node prices for COCOA,
 //! finalizes the median, then runs a funded price-floor agreement to
@@ -39,7 +42,9 @@ fn full_flow_oracle_to_settlement() {
     ];
 
     // One settlement token shared by the flow.
-    let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_client = token::Client::new(&env, &token_id);
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &10_000);
 
@@ -72,7 +77,10 @@ fn full_flow_oracle_to_settlement() {
         oracle_client.lastprice(&cocoa(&env)),
         Some(finalized.clone())
     );
-    assert_eq!(oracle_client.prices(&cocoa(&env), &1), Some(vec![&env, finalized]));
+    assert_eq!(
+        oracle_client.prices(&cocoa(&env), &1),
+        Some(vec![&env, finalized])
+    );
 
     // --- deploy the price-floor agreement against the oracle ---
     let pricefloor_id = env.register(pricefloor::WASM, ());
