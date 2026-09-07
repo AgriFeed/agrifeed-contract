@@ -358,4 +358,98 @@ impl Contract {
         .publish(&env);
         Ok(payout)
     }
+
+    /// Cancels the agreement and refunds any collateral.
+    ///
+    /// ### Arguments
+    /// - `caller`: the address requesting the cancel. Its authorization is
+    ///   required, and it must be the farmer or the buyer.
+    ///
+    /// Cancellation is available only when the agreement has stalled:
+    /// - while unfunded, once the maturity timestamp plus the unfunded grace
+    ///   period ([`UNFUNDED_CANCEL_GRACE`]) has passed, or
+    /// - while funded, once a `settle` attempt failed with
+    ///   [`Error::OracleDataUnavailable`] and the further grace period
+    ///   ([`SETTLE_FAILURE_GRACE`]) has passed since that failure. In that
+    ///   case the full collateral balance is refunded to the buyer.
+    ///
+    /// An unfunded cancel changes no state, since nothing was deposited.
+    ///
+    /// ### Returns
+    /// - `Ok(())` on success.
+    /// - `Err(Error::Unauthorized)` if `caller` is neither party, which is
+    ///   also the case when no agreement exists.
+    /// - `Err(Error::AlreadySettled)` if the agreement already settled.
+    /// - `Err(Error::GracePeriodNotElapsed)` if the applicable grace period
+    ///   has not elapsed yet.
+    ///
+    /// ### Events
+    /// Emits [`Cancelled`] with the caller.
+    pub fn cancel(env: Env, caller: Address) -> Result<(), Error> {
+        caller.require_auth();
+        let farmer: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Farmer)
+            .ok_or(Error::Unauthorized)?;
+        let buyer: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Buyer)
+            .ok_or(Error::Unauthorized)?;
+        if caller != farmer && caller != buyer {
+            return Err(Error::Unauthorized);
+        }
+        let settled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Settled)
+            .unwrap_or(false);
+        if settled {
+            return Err(Error::AlreadySettled);
+        }
+        let now = env.ledger().timestamp();
+        let funded: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Funded)
+            .unwrap_or(false);
+        let settlement_token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementToken)
+            .ok_or(Error::Unauthorized)?;
+        let token_client = token::Client::new(&env, &settlement_token);
+        if funded {
+            let failed_at: u64 = env
+                .storage()
+                .instance()
+                .get(&DataKey::SettleFailedAt)
+                .unwrap_or(0);
+            // A funded agreement can only be cancelled after a settle attempt
+            // failed for lack of an oracle price, and only once the further
+            // grace window after that failure has elapsed.
+            if failed_at == 0 || now < failed_at.saturating_add(SETTLE_FAILURE_GRACE) {
+                return Err(Error::GracePeriodNotElapsed);
+            }
+            let balance = token_client.balance(&env.current_contract_address());
+            if balance > 0 {
+                token_client.transfer(&env.current_contract_address(), &buyer, &balance);
+            }
+            env.storage().instance().set(&DataKey::Funded, &false);
+        } else {
+            let maturity: u64 = env
+                .storage()
+                .instance()
+                .get(&DataKey::Maturity)
+                .ok_or(Error::GracePeriodNotElapsed)?;
+            if now < maturity.saturating_add(UNFUNDED_CANCEL_GRACE) {
+                return Err(Error::GracePeriodNotElapsed);
+            }
+            // Nothing was deposited, so there is nothing to refund.
+        }
+        extend_instance(&env);
+        Cancelled { caller }.publish(&env);
+        Ok(())
+    }
 }
