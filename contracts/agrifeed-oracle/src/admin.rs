@@ -18,6 +18,35 @@ pub(crate) fn require_initialized(env: &Env) -> Result<(), Error> {
     }
 }
 
+/// Reads the stored administrator address.
+///
+/// Returns `Error::NotInitialized` if called before `initialize`, though in
+/// practice every call site already guards this with `require_initialized`
+/// first, so this is a defensive fallback, not the primary check.
+fn read_admin(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)
+}
+
+/// Returns `Error::NotAdmin` unless `admin` is the address stored as the
+/// contract's administrator.
+///
+/// `admin.require_auth()` alone only proves that whatever address was
+/// passed in signed the invocation, not that the address is the real
+/// administrator, so every admin-only function must call both: `require_auth`
+/// to authenticate the caller, and this to authorize them as admin
+/// specifically. Call after `require_initialized`, since there is no stored
+/// admin to compare against otherwise.
+pub(crate) fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+    if read_admin(env)? == *admin {
+        Ok(())
+    } else {
+        Err(Error::NotAdmin)
+    }
+}
+
 /// Reads the stored node list. Defaults to an empty list if unset, which can
 /// only happen before `initialize`.
 pub(crate) fn read_nodes(env: &Env) -> Vec<Address> {
@@ -112,12 +141,14 @@ impl Contract {
     /// - `Ok(())` on success. Adding a node that is already present is a
     ///   no-op and still returns `Ok(())`.
     /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::NotAdmin)` if `admin` is not the stored administrator.
     ///
     /// ### Events
     /// Emits [`NodeAdded`] with the node address when a new node is added.
     pub fn add_node(env: Env, admin: Address, node: Address) -> Result<(), Error> {
         admin.require_auth();
         require_initialized(&env)?;
+        require_admin(&env, &admin)?;
         let mut nodes = read_nodes(&env);
         if nodes.contains(&node) {
             return Ok(());
@@ -140,12 +171,14 @@ impl Contract {
     ///   no-op and still returns `Ok(())`. Removal does not retroactively
     ///   invalidate that node's already-finalized prices.
     /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::NotAdmin)` if `admin` is not the stored administrator.
     ///
     /// ### Events
     /// Emits [`NodeRemoved`] with the node address when a node is removed.
     pub fn remove_node(env: Env, admin: Address, node: Address) -> Result<(), Error> {
         admin.require_auth();
         require_initialized(&env)?;
+        require_admin(&env, &admin)?;
         let mut nodes = read_nodes(&env);
         let Some(index) = nodes.first_index_of(&node) else {
             return Ok(());
@@ -167,6 +200,7 @@ impl Contract {
     /// ### Returns
     /// - `Ok(())` on success.
     /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::NotAdmin)` if `admin` is not the stored administrator.
     /// - `Err(Error::InvalidThreshold)` if `threshold` is zero or exceeds the
     ///   number of nodes.
     ///
@@ -175,6 +209,7 @@ impl Contract {
     pub fn set_threshold(env: Env, admin: Address, threshold: u32) -> Result<(), Error> {
         admin.require_auth();
         require_initialized(&env)?;
+        require_admin(&env, &admin)?;
         let nodes = read_nodes(&env);
         if threshold == 0 || threshold > nodes.len() {
             return Err(Error::InvalidThreshold);
@@ -198,6 +233,7 @@ impl Contract {
     /// ### Returns
     /// - `Ok(())` on success.
     /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::NotAdmin)` if `admin` is not the stored administrator.
     /// - `Err(Error::InvalidThreshold)` if `retention` is zero. The error is
     ///   reused as a general validation error for positive configuration
     ///   values.
@@ -207,6 +243,7 @@ impl Contract {
     pub fn set_retention(env: Env, admin: Address, retention: u32) -> Result<(), Error> {
         admin.require_auth();
         require_initialized(&env)?;
+        require_admin(&env, &admin)?;
         if retention == 0 {
             return Err(Error::InvalidThreshold);
         }
@@ -228,6 +265,7 @@ impl Contract {
     /// ### Returns
     /// - `Ok(())` on success.
     /// - `Err(Error::NotInitialized)` if the contract is not initialized.
+    /// - `Err(Error::NotAdmin)` if `admin` is not the stored administrator.
     /// - `Err(Error::CommodityAlreadyExists)` if the asset is already
     ///   tracked.
     ///
@@ -236,6 +274,7 @@ impl Contract {
     pub fn add_commodity(env: Env, admin: Address, asset: Asset) -> Result<(), Error> {
         admin.require_auth();
         require_initialized(&env)?;
+        require_admin(&env, &admin)?;
         let mut commodities = read_commodities(&env);
         if commodities.contains(&asset) {
             return Err(Error::CommodityAlreadyExists);

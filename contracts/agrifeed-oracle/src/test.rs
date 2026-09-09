@@ -228,6 +228,10 @@ fn test_admin_functions_require_initialization() {
 
 #[test]
 fn test_admin_functions_require_admin_auth() {
+    // Covers the unauthenticated case only: a caller who never signs at
+    // all. See test_admin_functions_require_stored_admin below for the
+    // complementary case, a caller who signs for themself but is not the
+    // stored admin.
     let env = Env::default();
     let admin = Address::generate(&env);
     let contract_id = env.register(Contract, ());
@@ -251,6 +255,94 @@ fn test_admin_functions_require_admin_auth() {
         client.add_commodity(&stranger, &asset(&env, "COFFEE"));
     }));
     assert!(res.is_err());
+}
+
+#[test]
+fn test_admin_functions_require_stored_admin() {
+    // `setup()` calls `env.mock_all_auths()`, which authorizes whichever
+    // address a call names, including `stranger` below: this is a properly
+    // signed invocation, not a missing-authorization one (that case is
+    // covered separately by test_admin_functions_require_admin_auth).
+    // `stranger` successfully authenticates as itself and must still be
+    // rejected, because it is not the address stored as admin.
+    let f = setup();
+    let stranger = Address::generate(&f.env);
+    let node = Address::generate(&f.env);
+    assert_error(
+        &f.env,
+        &f.contract_id,
+        "add_node",
+        vec![
+            &f.env,
+            stranger.clone().into_val(&f.env),
+            node.clone().into_val(&f.env),
+        ],
+        Error::NotAdmin,
+    );
+    assert_error(
+        &f.env,
+        &f.contract_id,
+        "remove_node",
+        vec![
+            &f.env,
+            stranger.clone().into_val(&f.env),
+            f.nodes.get_unchecked(0).clone().into_val(&f.env),
+        ],
+        Error::NotAdmin,
+    );
+    assert_error(
+        &f.env,
+        &f.contract_id,
+        "set_threshold",
+        vec![
+            &f.env,
+            stranger.clone().into_val(&f.env),
+            2u32.into_val(&f.env),
+        ],
+        Error::NotAdmin,
+    );
+    assert_error(
+        &f.env,
+        &f.contract_id,
+        "set_retention",
+        vec![
+            &f.env,
+            stranger.clone().into_val(&f.env),
+            5u32.into_val(&f.env),
+        ],
+        Error::NotAdmin,
+    );
+    assert_error(
+        &f.env,
+        &f.contract_id,
+        "add_commodity",
+        vec![
+            &f.env,
+            stranger.clone().into_val(&f.env),
+            asset(&f.env, "COFFEE").into_val(&f.env),
+        ],
+        Error::NotAdmin,
+    );
+    // COFFEE was never added: the rejected add_commodity call above was a
+    // true no-op, not merely error-returning.
+    let client = ContractClient::new(&f.env, &f.contract_id);
+    assert_eq!(client.assets().len(), 1);
+}
+
+#[test]
+fn test_admin_functions_succeed_for_stored_admin() {
+    // The fix must not have weakened or broken the legitimate admin path.
+    let f = setup();
+    let client = ContractClient::new(&f.env, &f.contract_id);
+    let node = Address::generate(&f.env);
+    client.mock_all_auths().add_node(&f.admin, &node);
+    client.mock_all_auths().remove_node(&f.admin, &node);
+    client.mock_all_auths().set_threshold(&f.admin, &2);
+    client.mock_all_auths().set_retention(&f.admin, &5);
+    client
+        .mock_all_auths()
+        .add_commodity(&f.admin, &asset(&f.env, "COFFEE"));
+    assert_eq!(client.assets().len(), 2);
 }
 
 /// --- threshold and retention ---
