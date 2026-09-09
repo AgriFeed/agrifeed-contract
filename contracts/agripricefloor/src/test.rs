@@ -5,8 +5,8 @@ extern crate std;
 
 use crate::oracle;
 use crate::{to_oracle_asset, Asset, Contract, ContractClient, Error};
-use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{token, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke};
+use soroban_sdk::{token, vec, Address, Env, IntoVal, Symbol, Vec};
 
 /// Test fixture: a funded, oracle-backed price-floor agreement.
 struct Fixture {
@@ -134,7 +134,10 @@ fn test_initialize_requires_both_parties() {
     let contract_id = env.register(Contract, ());
     let pf = ContractClient::new(&env, &contract_id);
     let commodity = cocoa(&env);
-    // No auth mocking: the unauthenticated farmer makes the call fail.
+    // No auth mocking at all: neither party authorizes, so the call fails
+    // before either require_auth is satisfied. See
+    // test_initialize_fails_when_only_one_party_authorizes below for the
+    // complementary case, where one of the two genuinely signs.
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         pf.initialize(
             &farmer,
@@ -148,6 +151,70 @@ fn test_initialize_requires_both_parties() {
         );
     }));
     assert!(res.is_err());
+}
+
+/// Attempts `initialize` with only `signer` (not both farmer and buyer)
+/// authorizing, and asserts the call fails. `signer` is a genuinely,
+/// individually mocked authorization, not an absence of auth: this proves
+/// the contract's two `require_auth` calls are both independently load
+/// bearing, not just that *some* auth is missing.
+fn assert_initialize_fails_with_only_one_signer(signer_is_farmer: bool) {
+    let env = Env::default();
+    let farmer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let contract_id = env.register(Contract, ());
+    let pf = ContractClient::new(&env, &contract_id);
+    let commodity = cocoa(&env);
+    let floor_price = 100i128;
+    let notional = 10i128;
+    let settlement_token = token_id;
+    let maturity_ts = 1_000_000u64;
+    let oracle_addr = Address::generate(&env);
+    let signer = if signer_is_farmer { &farmer } else { &buyer };
+
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pf.mock_auths(&[MockAuth {
+            address: signer,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "initialize",
+                args: (
+                    &farmer,
+                    &buyer,
+                    &commodity,
+                    &floor_price,
+                    &notional,
+                    &settlement_token,
+                    &maturity_ts,
+                    &oracle_addr,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .initialize(
+            &farmer,
+            &buyer,
+            &commodity,
+            &floor_price,
+            &notional,
+            &settlement_token,
+            &maturity_ts,
+            &oracle_addr,
+        );
+    }));
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_initialize_fails_when_only_one_party_authorizes() {
+    // Farmer signs, buyer does not.
+    assert_initialize_fails_with_only_one_signer(true);
+    // Buyer signs, farmer does not.
+    assert_initialize_fails_with_only_one_signer(false);
 }
 
 /// --- fund ---
