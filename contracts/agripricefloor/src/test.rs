@@ -106,7 +106,12 @@ fn fund(f: &Fixture, amount: i128) {
 fn push_oracle_price(f: &Fixture, price: i128) {
     let oracle_client = oracle::Client::new(&f.env, &f.oracle_id);
     for node in f.nodes.iter() {
-        oracle_client.submit_price(&node, &to_oracle_asset(&f.cocoa), &price, &f.env.ledger().timestamp());
+        oracle_client.submit_price(
+            &node,
+            &to_oracle_asset(&f.cocoa),
+            &price,
+            &f.env.ledger().timestamp(),
+        );
     }
     oracle_client.finalize_price(&to_oracle_asset(&f.cocoa));
 }

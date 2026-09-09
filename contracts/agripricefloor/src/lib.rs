@@ -476,7 +476,10 @@ impl Contract {
                 .get(&DataKey::Commodity)
                 .ok_or(Error::GracePeriodNotElapsed)?;
             let oracle_client = oracle::Client::new(&env, &oracle_addr);
-            if oracle_client.lastprice(&to_oracle_asset(&commodity)).is_some() {
+            if oracle_client
+                .lastprice(&to_oracle_asset(&commodity))
+                .is_some()
+            {
                 return Err(Error::GracePeriodNotElapsed);
             }
             let balance = token_client.balance(&env.current_contract_address());
