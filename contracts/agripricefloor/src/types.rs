@@ -51,4 +51,13 @@ pub enum DataKey {
     Funded,
     /// Whether the agreement has been settled. Instance storage.
     Settled,
+    /// Whether `cancel` has been called successfully at least once.
+    /// Instance storage. Set to `true` unconditionally by `cancel`, in both
+    /// the funded and unfunded branches; never read or written anywhere
+    /// else. Added specifically so a point-in-time storage read can tell
+    /// "cancelled" apart from every other state without depending on
+    /// unbroken event history (see the `Cancelled` event's own doc comment
+    /// for the gap this closes, and why it could not be closed for any
+    /// already-deployed instance).
+    Cancelled,
 }

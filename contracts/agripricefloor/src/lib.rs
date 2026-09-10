@@ -68,7 +68,19 @@ pub struct Settled {
     pub market_price: i128,
 }
 
-/// Emitted by [`Contract::cancel`] when an agreement is cancelled.
+/// Emitted by [`Contract::cancel`] when an agreement is cancelled. Also
+/// recorded as a persistent [`DataKey::Cancelled`] storage flag by the same
+/// call, so "cancelled" can be told apart from every other state by a
+/// point-in-time storage read alone, not only by observing this event: a
+/// consumer whose event history has a gap (an outage longer than an RPC
+/// node's retention window) previously had no way to recover this fact for
+/// a funded-then-cancelled agreement, whose other flags (`Funded` reset to
+/// `false` by `cancel`) read identically to "never funded." This flag does
+/// not replace the event: existing consumers built to watch for `Cancelled`
+/// are unaffected, and an already-deployed instance (built before this
+/// flag existed) never gains it retroactively, since Soroban contracts
+/// have no in-place upgrade mechanism -- cancellation must still be
+/// assumed event-derived for any instance deployed before this change.
 #[contractevent]
 pub struct Cancelled {
     #[topic]
@@ -498,6 +510,11 @@ impl Contract {
             }
             // Nothing was deposited, so there is nothing to refund.
         }
+        // Set unconditionally, in both branches, alongside the event this
+        // call already publishes -- see DataKey::Cancelled's and
+        // Cancelled's own doc comments for exactly what this closes and
+        // for which instances it cannot help.
+        env.storage().instance().set(&DataKey::Cancelled, &true);
         extend_instance(&env);
         Cancelled { caller }.publish(&env);
         Ok(())

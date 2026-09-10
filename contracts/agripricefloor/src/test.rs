@@ -4,7 +4,7 @@
 extern crate std;
 
 use crate::oracle;
-use crate::{to_oracle_asset, Asset, Contract, ContractClient, Error};
+use crate::{to_oracle_asset, Asset, Contract, ContractClient, DataKey, Error};
 use soroban_sdk::testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke};
 use soroban_sdk::{token, vec, Address, Env, IntoVal, Symbol, Vec};
 
@@ -118,6 +118,41 @@ fn push_oracle_price(f: &Fixture, price: i128) {
 
 fn balance(f: &Fixture, address: &Address) -> i128 {
     token::Client::new(&f.env, &f.token_id).balance(address)
+}
+
+/// Reads DataKey::Cancelled directly out of instance storage: there is no
+/// public getter (AgriPriceFloor exposes no state-reading function at
+/// all), so this is the only way to assert the flag itself, as opposed to
+/// asserting only the public, already-covered behavior (return value,
+/// balances) around it.
+fn is_cancelled(f: &Fixture) -> bool {
+    f.env.as_contract(&f.pricefloor_id, || {
+        f.env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Cancelled)
+            .unwrap_or(false)
+    })
+}
+
+fn is_settled(f: &Fixture) -> bool {
+    f.env.as_contract(&f.pricefloor_id, || {
+        f.env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Settled)
+            .unwrap_or(false)
+    })
+}
+
+fn is_funded(f: &Fixture) -> bool {
+    f.env.as_contract(&f.pricefloor_id, || {
+        f.env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Funded)
+            .unwrap_or(false)
+    })
 }
 
 /// --- initialize ---
@@ -422,6 +457,79 @@ fn test_cancel_after_settle_fails() {
     pf.settle();
     let res = pf.try_cancel(&f.farmer);
     assert_eq!(res, Err(Ok(Error::AlreadySettled)));
+}
+
+/// --- DataKey::Cancelled (Phase 5 Step 6) ---
+
+#[test]
+fn test_cancel_unauthorized_still_fails_and_never_sets_cancelled() {
+    // Regression guard for the new flag: adding it must not change, let
+    // alone weaken, cancel's own authorization check. A stranger is
+    // rejected exactly as before, and the flag is never set on a call
+    // that never actually cancelled anything.
+    let f = setup(100, 10);
+    let pf = ContractClient::new(&f.env, &f.pricefloor_id);
+    let res = pf.try_cancel(&f.stranger);
+    assert_eq!(res, Err(Ok(Error::Unauthorized)));
+    assert!(!is_cancelled(&f));
+}
+
+#[test]
+fn test_cancel_unfunded_sets_cancelled() {
+    let f = setup(100, 10);
+    let pf = ContractClient::new(&f.env, &f.pricefloor_id);
+    assert!(!is_cancelled(&f));
+    f.env
+        .ledger()
+        .set_timestamp(f.maturity_ts + crate::UNFUNDED_CANCEL_GRACE + 1);
+    let res = pf.try_cancel(&f.farmer);
+    assert_eq!(res, Ok(Ok(())));
+    assert!(is_cancelled(&f));
+    // Cancelling an unfunded agreement changes no other stored field.
+    assert!(!is_funded(&f));
+    assert!(!is_settled(&f));
+}
+
+#[test]
+fn test_cancel_funded_sets_cancelled_and_preserves_other_fields() {
+    let f = setup(100, 10);
+    fund(&f, 500);
+    assert!(is_funded(&f));
+    let pf = ContractClient::new(&f.env, &f.pricefloor_id);
+    f.env
+        .ledger()
+        .set_timestamp(f.maturity_ts + crate::SETTLE_FAILURE_GRACE + 1);
+    let res = pf.try_cancel(&f.buyer);
+    assert_eq!(res, Ok(Ok(())));
+    assert!(is_cancelled(&f));
+    // The pre-existing behavior (Funded reset to false, collateral
+    // refunded, Settled left false) is exactly what made "cancelled"
+    // indistinguishable from "never funded" before this step -- confirmed
+    // still true here, which is exactly why the new flag above is the
+    // only reliable signal, not a replacement for checking it.
+    assert!(!is_funded(&f));
+    assert!(!is_settled(&f));
+    assert_eq!(balance(&f, &f.pricefloor_id), 0);
+    assert_eq!(balance(&f, &f.buyer), 1_000_000);
+}
+
+#[test]
+fn test_cancel_repeated_after_success_still_succeeds_unchanged() {
+    // The new flag adds no new guard against calling cancel again: that
+    // was never asked for, and repeated-call behavior must remain exactly
+    // what it was. An unfunded agreement past its own (48h) grace window
+    // can still be cancelled a second time, exactly as before.
+    let f = setup(100, 10);
+    let pf = ContractClient::new(&f.env, &f.pricefloor_id);
+    f.env
+        .ledger()
+        .set_timestamp(f.maturity_ts + crate::UNFUNDED_CANCEL_GRACE + 1);
+    let first = pf.try_cancel(&f.farmer);
+    assert_eq!(first, Ok(Ok(())));
+    assert!(is_cancelled(&f));
+    let second = pf.try_cancel(&f.buyer);
+    assert_eq!(second, Ok(Ok(())));
+    assert!(is_cancelled(&f));
 }
 
 /// Asserts that calling a pricefloor function returns the given typed error.
