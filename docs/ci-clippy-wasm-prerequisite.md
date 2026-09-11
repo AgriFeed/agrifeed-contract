@@ -99,5 +99,27 @@ Run from `~/agrifeed-contract`:
 
 ## GitHub Actions run
 
-Pending push. This section will be updated with the real run ID and final job
-results once the change is pushed to `origin/main`.
+Commit `a1e8196` (`ci: build contract wasm before clippy`), pushed to
+`origin/main`.
+
+Run: https://github.com/AgriFeed/agrifeed-contract/actions/runs/34578328985
+(run ID `34578328985`)
+
+Final job results:
+
+| Job | Result | Duration |
+| --- | --- | --- |
+| Format | ✅ success | 12s |
+| Clippy | ✅ success | 1m20s |
+| Build and test | ✅ success | 1m27s |
+
+Clippy job step log confirms the prerequisite steps ran and the unchanged
+Clippy command then passed:
+
+```
+✓ Run dtolnay/rust-toolchain@stable
+✓ Install stellar-cli
+✓ Build oracle wasm
+✓ Build pricefloor wasm
+✓ Run cargo clippy --workspace --all-targets -- -D warnings
+```
